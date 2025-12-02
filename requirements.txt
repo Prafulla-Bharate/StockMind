@@ -74,6 +74,7 @@ hdfs==2.7.0
 prometheus-client==0.19.0
 sentry-sdk==1.38.0
 
+yfinance
 
 # # Testing
 # pytest==7.4.3
