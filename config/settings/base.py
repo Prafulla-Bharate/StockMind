@@ -117,6 +117,17 @@ except Exception:
     # If CACHES isn't usable here for some reason, ignore and continue.
     pass
 
+# For local development (DEBUG=True) prefer an in-memory cache to avoid
+# requiring Redis to be available. This prevents cache-related errors
+# (which can cause 500s and block CORS headers) while developing locally.
+if DEBUG:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+        }
+    }
+
 # Channels (WebSocket)
 CHANNEL_LAYERS = {
     'default': {
@@ -170,7 +181,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.OrderingFilter',
     ],
     'DEFAULT_RENDERER_CLASSES': [
-        'rest_framework.renderers.JSONRenderer',
+        'utils.renderer.CamelCaseJSONRenderer',
     ],
     'EXCEPTION_HANDLER': 'utils.exceptions.custom_exception_handler',
     'DEFAULT_THROTTLE_CLASSES': [
@@ -199,7 +210,11 @@ SIMPLE_JWT = {
 }
 
 # CORS
-CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000').split(',')
+# Include common frontend dev origins by default (can be overridden in .env)
+CORS_ALLOWED_ORIGINS = config(
+    'CORS_ALLOWED_ORIGINS',
+    default='http://localhost:3000,http://127.0.0.1:3000,http://localhost:8081,http://127.0.0.1:8081'
+).split(',')
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     'accept',

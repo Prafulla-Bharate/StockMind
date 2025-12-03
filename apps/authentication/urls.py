@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, re_path
 from django.http import HttpResponse
 from .views import RegisterView, LoginView,  LogoutView, ProfileView
 
@@ -25,9 +25,10 @@ def index(request):
 
 urlpatterns = [
         path('', index, name='index'),
-        path('register/', RegisterView.as_view(), name='register'),
-        path('login/', LoginView.as_view(), name='login'),
-        path('logout/', LogoutView.as_view(), name='logout'),
-        path('profile/', ProfileView.as_view(), name='profile'),
+    # support both with and without trailing slash to match frontend requests
+    re_path(r'^register/?$', RegisterView.as_view(), name='register'),
+    re_path(r'^login/?$', LoginView.as_view(), name='login'),
+    re_path(r'^logout/?$', LogoutView.as_view(), name='logout'),
+    re_path(r'^profile/?$', ProfileView.as_view(), name='profile'),
 ]
 
