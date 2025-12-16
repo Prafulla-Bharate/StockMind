@@ -4,6 +4,8 @@ import pandas as pd
 from apps.market.models import Stock, StockPrice, StockPrediction
 from services.ml.lstm_predictor import LSTMPredictor
 from decimal import Decimal
+from services.websocket.broadcaster import broadcast_prediction_update
+
 
 logger = get_task_logger(__name__)
 
@@ -57,7 +59,7 @@ def update_predictions(self):
                     bullish_score = (bullish_signals / 3) * 100
                     
                     # Save prediction
-                    StockPrediction.objects.create(
+                    prediction_obj = StockPrediction.objects.create(
                         stock=stock,
                         current_price=Decimal(str(current_price)),
                         short_term_target=short_term_target,
@@ -77,6 +79,29 @@ def update_predictions(self):
                         overall_sentiment='Bullish' if bullish_score > 50 else 'Bearish'
                     )
                     
+                    # Broadcast via WebSocket
+                    prediction_data = {
+                        'predictions': {
+                            'shortTerm': {
+                                'targetPrice': float(short_term_target),
+                                'change': float(short_term_change),
+                                'trend': short_trend
+                            },
+                            'mediumTerm': {
+                                'targetPrice': float(medium_term_target),
+                                'change': float(medium_term_change),
+                                'trend': medium_trend
+                            },
+                            'longTerm': {
+                                'targetPrice': float(long_term_target),
+                                'change': float(long_term_change),
+                                'trend': long_trend
+                            }
+                        },
+                        'timestamp': prediction_obj.timestamp
+                    }
+                    broadcast_prediction_update(stock.symbol, prediction_data)
+
                     success_count += 1
                     
             except Exception as e:

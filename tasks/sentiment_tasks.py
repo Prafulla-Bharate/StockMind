@@ -3,6 +3,7 @@ from celery.utils.log import get_task_logger
 from apps.market.models import Stock, NewsArticle, Sentiment
 from services.external.news_api import NewsAPIService
 from services.external.gemini_api import GeminiSentimentAnalyzer
+from services.websocket.broadcaster import broadcast_sentiment_update
 
 logger = get_task_logger(__name__)
 
@@ -94,7 +95,7 @@ def aggregate_sentiment(self, symbol):
             overall = 'neutral'
         
         # Create aggregate sentiment
-        Sentiment.objects.create(
+        sentiment_obj = Sentiment.objects.create(
             stock=stock,
             ai_sentiment=overall,
             ai_score=avg_score,
@@ -106,6 +107,14 @@ def aggregate_sentiment(self, symbol):
             bearish_count=bearish,
             total_articles=sentiments.count()
         )
+        
+
+        sentiment_data = {
+            'sentiment': overall,
+            'score': avg_score,
+            'timestamp': sentiment_obj.timestamp
+        }
+        broadcast_sentiment_update(symbol, sentiment_data)
         
         return f"Aggregated sentiment for {symbol}"
     

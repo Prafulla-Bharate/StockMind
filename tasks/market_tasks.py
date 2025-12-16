@@ -5,6 +5,10 @@ from services.market_data.fetcher import MarketDataFetcher
 from services.market_data.indicators import TechnicalIndicatorCalculator
 from services.streaming.kafka_producer import StockDataProducer
 from django.core.cache import cache
+from services.websocket.broadcaster import (
+    broadcast_stock_update,
+    broadcast_indicator_update
+)
 
 logger = get_task_logger(__name__)
 
@@ -34,6 +38,9 @@ def fetch_market_data(self, symbols=None):
                     # Cache for WebSocket
                     cache.set(f"latest_price_{symbol}", quote, 300)
                     
+                    # Broadcast via WebSocket
+                    broadcast_stock_update(symbol, quote)
+
                     logger.info(f"Fetched data for {symbol}")
                 
             except Exception as e:
