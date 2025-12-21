@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3.9'
 
 services:
   # PostgreSQL Database
@@ -50,49 +50,25 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     networks:
       - stockmind_network
 
-  # Spark Master
-  spark-master:
-    image: bitnami/spark:3.5.0
-    container_name: stockmind_spark_master
-    environment:
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-    ports:
-      - "8080:8080"
-      - "7077:7077"
-    volumes:
-      - ./spark_jobs:/opt/spark-jobs
-    networks:
-      - stockmind_network
+  
 
-  # Spark Worker
-  spark-worker:
-    image: bitnami/spark:3.5.0
-    container_name: stockmind_spark_worker
-    depends_on:
-      - spark-master
-    environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=2G
-      - SPARK_WORKER_CORES=2
-    networks:
-      - stockmind_network
-
-  # Django Web Application
+  # Django Web Application (with Daphne for WebSockets)
   web:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: stockmind_web
-    command: python manage.py runserver 0.0.0.0:8000
+    command: >
+      sh -c "python manage.py migrate &&
+      daphne -b 0.0.0.0 -p 8000 config.asgi:application"
     volumes:
       - .:/app
       - static_volume:/app/staticfiles
@@ -101,24 +77,35 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
     depends_on:
       - postgres
       - redis
       - kafka
+      - zookeeper
     networks:
       - stockmind_network
 
   # Celery Worker
-  celery:
+  celery-worker:
     build:
       context: .
       dockerfile: Dockerfile.celery
-    container_name: stockmind_celery
+    container_name: stockmind_celery_worker
     command: celery -A config worker -l info -Q default,predictions,sentiment,market_data
     volumes:
       - .:/app
     env_file:
       - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
     depends_on:
       - postgres
       - redis
@@ -137,9 +124,15 @@ services:
       - .:/app
     env_file:
       - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
     depends_on:
       - postgres
       - redis
+      - web
     networks:
       - stockmind_network
 

@@ -1,4 +1,5 @@
 import os
+from django.conf import settings
 from celery import Celery
 from celery.schedules import crontab
 
@@ -6,7 +7,25 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.development')
 
 app = Celery('stockmind')
 app.config_from_object('django.conf:settings', namespace='CELERY')
-app.autodiscover_tasks()
+
+# Discover tasks from Django apps and the top-level `tasks` package so
+# beat-scheduled dotted paths (e.g., tasks.market_tasks.fetch_market_data)
+# register on all workers.
+app.autodiscover_tasks(settings.INSTALLED_APPS + ['tasks'])
+# Also force-import key task modules for robustness on Windows spawn.
+app.conf.imports = app.conf.imports + (
+    'tasks.market_tasks',
+    'tasks.scanner_tasks',
+    'tasks.prediction_tasks',
+    'tasks.sentiment_tasks',
+    'tasks.cleanup_tasks',
+)
+
+# On Windows, the default multiprocessing pool can hit semaphore/handle
+# permission errors (WinError 5). Use the solo pool to avoid them.
+if os.name == 'nt':
+    app.conf.worker_pool = 'solo'
+    app.conf.worker_concurrency = 1
 
 # Celery Beat Schedule
 app.conf.beat_schedule = {
