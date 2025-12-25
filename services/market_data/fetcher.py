@@ -2,6 +2,7 @@ import yfinance as yf
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
+from django.utils import timezone
 from django.core.cache import cache
 from apps.market.models import Stock, StockPrice
 import pandas as pd
@@ -40,7 +41,7 @@ class MarketDataFetcher:
                     'low': Decimal(str(fast_info.get('day_low', 0))),
                     'previousClose': Decimal(str(fast_info.get('previous_close', 0))),
                     'volume': int(fast_info.get('last_volume', 0)),
-                    'timestamp': datetime.now()
+                    'timestamp': timezone.now()
                 }
             else:
                 current_price = Decimal(str(info.get('currentPrice', 0)))
@@ -58,7 +59,7 @@ class MarketDataFetcher:
                     'high': Decimal(str(info.get('dayHigh', 0))),
                     'low': Decimal(str(info.get('dayLow', 0))),
                     'previousClose': previous_close,
-                    'timestamp': datetime.now()
+                    'timestamp': timezone.now()
                 }
             
             # Cache for 1 minute

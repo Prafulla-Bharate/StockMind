@@ -26,14 +26,13 @@ class TechnicalIndicatorCalculator:
             # -----------------------------------------------
             # CHANGE 1: Use timestamps correctly + iterator()
             # -----------------------------------------------
-            prices = (
+            prices_qs = (
                 StockPrice.objects
                 .filter(stock=stock)
                 .order_by('timestamp')
-                .iterator()  # reduces memory usage
+                .values('timestamp', 'close', 'high', 'low', 'volume')
             )
-
-            df = pd.DataFrame(list(prices)[-lookback_days:])
+            df = pd.DataFrame(list(prices_qs)[-lookback_days:])
             if len(df) < 50:
                 logger.warning(f"Not enough data for {symbol}")
                 return None

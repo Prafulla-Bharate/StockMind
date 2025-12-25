@@ -50,7 +50,8 @@ class MarketScanner:
         change_percent = ((latest.close - previous.close) / previous.close) * 100
         
         # Calculate average volume (20 days)
-        twenty_days_ago = datetime.now() - timedelta(days=20)
+        from django.utils import timezone
+        twenty_days_ago = timezone.now() - timedelta(days=20)
         avg_volume = StockPrice.objects.filter(
             stock=stock,
             timestamp__gte=twenty_days_ago

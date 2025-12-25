@@ -18,7 +18,8 @@ def run_market_scanner(self, timeframe='daily'):
             return f"No results for {timeframe}"
         
         # Save results
-        timestamp = datetime.now()
+        from django.utils import timezone
+        timestamp = timezone.now()
         created_count = 0
         
         for result in results:

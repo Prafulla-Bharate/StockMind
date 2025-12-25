@@ -7,6 +7,9 @@ python-decouple==3.8
 python-dotenv==1.0.0
 django-cors-headers==4.3.1
 Pillow==10.1.0
+whitenoise==6.6.0
+django-admin-interface==0.28.7
+
 
 # Celery & Redis
 celery==5.3.4
@@ -60,15 +63,14 @@ langchain==0.1.20
 langchain-google-genai==0.0.5
 
 # Streaming / Kafka
-kafka-python==2.0.2 six
+kafka-python==2.0.2
 confluent-kafka==2.3.0
 
-# Spark
-pyspark==3.5.1
+
 # py4j removed (already included in pyspark)
 
 # HDFS
-hdfs==2.7.0
+
 
 # Monitoring
 prometheus-client==0.19.0

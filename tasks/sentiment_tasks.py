@@ -67,8 +67,9 @@ def aggregate_sentiment(self, symbol):
         stock = Stock.objects.get(symbol=symbol)
         
         # Get recent sentiments (last 7 days)
-        from datetime import datetime, timedelta
-        seven_days_ago = datetime.now() - timedelta(days=7)
+        from datetime import timedelta
+        from django.utils import timezone
+        seven_days_ago = timezone.now() - timedelta(days=7)
         
         sentiments = Sentiment.objects.filter(
             stock=stock,

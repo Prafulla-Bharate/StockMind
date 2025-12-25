@@ -60,6 +60,11 @@ app.conf.beat_schedule = {
         'task': 'tasks.cleanup_tasks.cleanup_old_data',
         'schedule': crontab(hour=0, minute=0),  # Midnight
     },
+    'fetch-historical-data-weekly': {
+        'task': 'tasks.market_tasks.fetch_historical_data_for_stocks',
+        'schedule': crontab(day_of_week=0, hour=2, minute=0),  # Sunday 2 AM
+        'kwargs': {'period': '1y', 'force_refresh': False},
+    },
 }
 
 # Task routing

@@ -1,7 +1,7 @@
 from kafka import KafkaProducer
-import json
 import logging
 from django.conf import settings
+from utils.json_serializer import safe_json_dumps
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ class StockDataProducer:
         try:
             self.producer = KafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
-                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                value_serializer=lambda v: safe_json_dumps(v).encode('utf-8'),
                 key_serializer=lambda k: k.encode('utf-8'),
                 acks='all',
                 retries=3,

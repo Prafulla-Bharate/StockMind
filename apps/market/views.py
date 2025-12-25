@@ -21,6 +21,7 @@ from services.market_data.fetcher import MarketDataFetcher
 from services.market_data.indicators import TechnicalIndicatorCalculator
 from services.external.news_api import NewsAPIService
 from services.external.gemini_api import GeminiSentimentAnalyzer
+from textblob import TextBlob
 from services.ml.lstm_predictor import LSTMPredictor
 from utils.responses import success_response, error_response
 
@@ -85,6 +86,23 @@ class StockDetailView(APIView):
             latest_indicator = TechnicalIndicator.objects.filter(
                 stock=stock
             ).order_by('-timestamp').first()
+
+            # Calculate indicators on-demand if missing or stale
+            try:
+                needs_calc = False
+                if not latest_indicator:
+                    needs_calc = True
+                elif latest_price and latest_indicator.timestamp < latest_price.timestamp:
+                    needs_calc = True
+
+                if needs_calc:
+                    tic = TechnicalIndicatorCalculator()
+                    tic.calculate_indicators(stock.symbol)
+                    latest_indicator = TechnicalIndicator.objects.filter(
+                        stock=stock
+                    ).order_by('-timestamp').first()
+            except Exception:
+                pass
             
             indicators = {}
             if latest_indicator:
@@ -96,7 +114,8 @@ class StockDetailView(APIView):
                 }
             
             # Calculate 52-week high/low
-            year_ago = datetime.now() - timedelta(days=365)
+            from django.utils import timezone
+            year_ago = timezone.now() - timedelta(days=365)
             year_prices = StockPrice.objects.filter(
                 stock=stock,
                 timestamp__gte=year_ago
@@ -247,6 +266,7 @@ class NewsView(APIView):
             neutral = 0
             bearish = 0
             
+            quick_analyzed = 0
             for article in news_articles:
                 sentiment_obj = Sentiment.objects.filter(
                     news_article=article
@@ -268,6 +288,54 @@ class NewsView(APIView):
                         bearish += 1
                     else:
                         neutral += 1
+                else:
+                    # Fast local sentiment for first few articles to keep endpoint snappy
+                    try:
+                        if quick_analyzed < 5:  # cap per request
+                            text = f"{article.title} {article.description}"
+                            polarity = TextBlob(text).sentiment.polarity
+                            if polarity > 0.1:
+                                lbl = 'positive'
+                            elif polarity < -0.1:
+                                lbl = 'negative'
+                            else:
+                                lbl = 'neutral'
+
+                            Sentiment.objects.create(
+                                stock=stock,
+                                news_article=article,
+                                ai_sentiment=lbl,
+                                ai_score=float(polarity),
+                                analysis='Quick local sentiment (TextBlob).',
+                                overall_sentiment=lbl,
+                                overall_score=float(polarity),
+                                total_articles=1
+                            )
+                            article_data['sentiment'] = {
+                                'score': float(polarity),
+                                'label': lbl,
+                                'explanation': 'Quick local sentiment (TextBlob).'
+                            }
+                            total_score += float(polarity)
+                            if lbl == 'positive':
+                                bullish += 1
+                            elif lbl == 'negative':
+                                bearish += 1
+                            else:
+                                neutral += 1
+                            quick_analyzed += 1
+                        else:
+                            article_data['sentiment'] = {
+                                'score': 0,
+                                'label': 'neutral',
+                                'explanation': 'Sentiment not available yet.'
+                            }
+                    except Exception:
+                        article_data['sentiment'] = {
+                            'score': 0,
+                            'label': 'neutral',
+                            'explanation': 'Sentiment not available yet.'
+                        }
                 
                 news_with_sentiment.append(article_data)
             
@@ -322,10 +390,14 @@ class SentimentView(APIView):
             ).order_by('-timestamp').first()
             
             if not sentiment:
-                return Response(
-                    error_response(message='No sentiment data available'),
-                    status=status.HTTP_404_NOT_FOUND
-                )
+                # Return neutral fallback instead of 404 to avoid frontend crashes
+                data = {
+                    'sentiment': 'Neutral',
+                    'sentimentScore': 0,
+                    'analysis': 'Sentiment data not available yet; defaulting to neutral.',
+                    'timestamp': datetime.now().isoformat()
+                }
+                return Response(success_response(data=data))
             
             data = {
                 'sentiment': sentiment.overall_sentiment,
@@ -346,32 +418,111 @@ class AIPredictionView(APIView):
     """AI-based stock prediction using LSTM"""
     permission_classes = [IsAuthenticated]
     
+    def get(self, request):
+        """GET /api/market/ai-prediction - Returns API documentation"""
+        return Response({
+            'endpoint': '/api/market/ai-prediction/',
+            'method': 'POST',
+            'description': 'Generate AI-based stock price predictions using LSTM model',
+            'authentication': 'JWT Bearer Token required',
+            'request_body': {
+                'symbol': {
+                    'type': 'string',
+                    'required': True,
+                    'description': 'Stock symbol (e.g., AAPL, MSFT, GOOGL)',
+                    'example': 'AAPL'
+                },
+                'historicalData': {
+                    'type': 'array',
+                    'required': False,
+                    'description': 'Optional historical price data. If not provided, data will be fetched from database',
+                    'example': []
+                }
+            },
+            'example_request': {
+                'symbol': 'AAPL',
+                'historicalData': []
+            },
+            'response': {
+                'success': True,
+                'data': {
+                    'prediction': 'Based on AI analysis, the stock is predicted to reach $150.25 in 30 days.'
+                }
+            }
+        })
+    
     def post(self, request):
         """POST /api/market/ai-prediction"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Log incoming request data for debugging
+        logger.info(f"AI Prediction Request - Data: {request.data}")
+        logger.info(f"AI Prediction Request - Content Type: {request.content_type}")
+        
         symbol = request.data.get('symbol')
         historical_data = request.data.get('historicalData', [])
         
+        logger.info(f"Extracted symbol: {symbol}, historical_data length: {len(historical_data) if historical_data else 0}")
+        
         if not symbol:
+            logger.warning(f"Missing symbol in request. Full request data: {request.data}")
             return Response(
-                error_response(message='Symbol is required'),
+                error_response(
+                    message='Symbol is required. Please provide a stock symbol in the request body.',
+                    errors={'symbol': ['This field is required']}
+                ),
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         try:
             # Convert historical data to DataFrame
             if historical_data:
+                logger.info(f"Using provided historical data: {len(historical_data)} records")
                 df = pd.DataFrame(historical_data)
             else:
-                # Fetch from database
-                stock = Stock.objects.get(symbol=symbol.upper())
+                # Fetch from database first
+                logger.info(f"Fetching historical data from database for symbol: {symbol.upper()}")
+                stock, created = Stock.objects.get_or_create(
+                    symbol=symbol.upper(),
+                    defaults={'name': symbol.upper()}
+                )
                 prices = StockPrice.objects.filter(stock=stock).order_by('timestamp')[:500]
-                df = pd.DataFrame(list(prices.values(
-                    'timestamp', 'open', 'high', 'low', 'close', 'volume'
-                )))
+                price_list = list(prices.values('timestamp', 'open', 'high', 'low', 'close', 'volume'))
+                logger.info(f"Fetched {len(price_list)} price records from database")
+                
+                # If not enough data in DB, fetch from yfinance
+                if len(price_list) < 100:
+                    logger.info(f"Not enough data in DB, fetching from yfinance...")
+                    from services.market_data.fetcher import MarketDataFetcher
+                    fetcher = MarketDataFetcher()
+                    historical = fetcher.fetch_historical_data(symbol, period='1y', interval='1d')
+                    
+                    if historical:
+                        logger.info(f"Fetched {len(historical)} records from yfinance")
+                        # Convert to DataFrame format
+                        df = pd.DataFrame([{
+                            'timestamp': item['date'],
+                            'open': float(item['open']),
+                            'high': float(item['high']),
+                            'low': float(item['low']),
+                            'close': float(item['close']),
+                            'volume': item['volume']
+                        } for item in historical])
+                    else:
+                        df = pd.DataFrame(price_list)
+                else:
+                    df = pd.DataFrame(price_list)
+            
+            logger.info(f"DataFrame length: {len(df)}, Required: 100")
             
             if len(df) < 100:
+                logger.warning(f"Insufficient data: {len(df)} records found, 100 required")
                 return Response(
-                    error_response(message='Not enough historical data'),
+                    error_response(
+                        message=f'Not enough historical data. Found {len(df)} records, need at least 100 for AI prediction. The stock may be newly listed or have insufficient trading history.',
+                        errors={'data': [f'Only {len(df)} historical price points available']}
+                    ),
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
@@ -400,19 +551,72 @@ class StatisticalPredictionView(APIView):
     """Statistical prediction with technical analysis"""
     permission_classes = [IsAuthenticated]
     
+    def get(self, request):
+        """GET /api/market/statistical-prediction - Returns API documentation"""
+        return Response({
+            'endpoint': '/api/market/statistical-prediction/',
+            'method': 'POST',
+            'description': 'Get statistical ML predictions for a stock based on historical data',
+            'authentication': 'JWT Bearer Token required',
+            'request_body': {
+                'symbol': {
+                    'type': 'string',
+                    'required': True,
+                    'description': 'Stock symbol (e.g., AAPL, MSFT)',
+                    'example': 'AAPL'
+                },
+                'historicalData': {
+                    'type': 'array',
+                    'required': False,
+                    'description': 'Optional historical price data'
+                }
+            },
+            'response': {
+                'success': True,
+                'data': {
+                    'symbol': 'AAPL',
+                    'timestamp': '2025-12-23T10:00:00Z',
+                    'currentPrice': 250.50,
+                    'technicalIndicators': {
+                        'sma20': 245.30,
+                        'sma50': 240.10,
+                        'rsi': 65.5,
+                        'macd': 2.15
+                    },
+                    'predictions': {
+                        'shortTerm': {...},
+                        'mediumTerm': {...},
+                        'longTerm': {...}
+                    }
+                }
+            }
+        })
+    
     def post(self, request):
         """POST /api/market/statistical-prediction"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         symbol = request.data.get('symbol')
         historical_data = request.data.get('historicalData', [])
         
+        logger.info(f"Statistical Prediction Request - Symbol: {symbol}")
+        
         if not symbol:
+            logger.warning(f"Missing symbol in statistical prediction request")
             return Response(
-                error_response(message='Symbol is required'),
+                error_response(
+                    message='Symbol is required',
+                    errors={'symbol': ['This field is required']}
+                ),
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         try:
-            stock = Stock.objects.get(symbol=symbol.upper())
+            stock, created = Stock.objects.get_or_create(
+                symbol=symbol.upper(),
+                defaults={'name': symbol.upper()}
+            )
             
             # Get latest prediction from database
             prediction = StockPrediction.objects.filter(
@@ -420,9 +624,14 @@ class StatisticalPredictionView(APIView):
             ).order_by('-timestamp').first()
             
             if not prediction:
+                # No prediction exists yet - return 200 with null data instead of 404
+                logger.warning(f"No prediction available for {symbol} - run update_predictions task first")
                 return Response(
-                    error_response(message='No prediction available'),
-                    status=status.HTTP_404_NOT_FOUND
+                    success_response(
+                        data=None,
+                        message=f'No prediction available for {symbol}. Predictions are generated periodically via Celery tasks. Please try again later or run: python manage.py shell -c "from tasks.prediction_tasks import update_predictions; update_predictions.delay()"'
+                    ),
+                    status=status.HTTP_200_OK
                 )
             
             # Get latest indicators
@@ -430,17 +639,19 @@ class StatisticalPredictionView(APIView):
                 stock=stock
             ).order_by('-timestamp').first()
             
+            logger.info(f"Successfully retrieved prediction for {symbol}")
+            
             data = {
                 'symbol': stock.symbol,
                 'timestamp': prediction.timestamp.isoformat(),
                 'currentPrice': float(prediction.current_price),
                 'technicalIndicators': {
-                    'sma20': indicator.sma_20 if indicator else None,
-                    'sma50': indicator.sma_50 if indicator else None,
-                    'rsi': indicator.rsi_14 if indicator else None,
-                    'macd': indicator.macd if indicator else None,
-                    'bollingerUpper': indicator.bollinger_upper if indicator else None,
-                    'bollingerLower': indicator.bollinger_lower if indicator else None,
+                    'sma20': float(indicator.sma_20) if indicator and indicator.sma_20 else None,
+                    'sma50': float(indicator.sma_50) if indicator and indicator.sma_50 else None,
+                    'rsi': float(indicator.rsi_14) if indicator and indicator.rsi_14 else None,
+                    'macd': float(indicator.macd) if indicator and indicator.macd else None,
+                    'bollingerUpper': float(indicator.bollinger_upper) if indicator and indicator.bollinger_upper else None,
+                    'bollingerLower': float(indicator.bollinger_lower) if indicator and indicator.bollinger_lower else None,
                 },
                 'predictions': {
                     'shortTerm': {

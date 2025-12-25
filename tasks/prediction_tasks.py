@@ -20,18 +20,26 @@ def update_predictions(self):
         for stock in symbols:
             try:
                 # Get historical data
-                prices = StockPrice.objects.filter(stock=stock).order_by('timestamp')[:500]
+                prices_qs = StockPrice.objects.filter(stock=stock).order_by('timestamp')[:500]
+                prices_list = list(prices_qs)
                 
-                if len(prices) < 100:
+                if len(prices_list) < 100:
                     continue
                 
-                df = pd.DataFrame(list(prices.values('timestamp', 'open', 'high', 'low', 'close', 'volume')))
+                df = pd.DataFrame([{
+                    'timestamp': p.timestamp,
+                    'open': p.open,
+                    'high': p.high,
+                    'low': p.low,
+                    'close': p.close,
+                    'volume': p.volume
+                } for p in prices_list])
                 
                 # Get predictions
                 predictions = predictor.predict(df, steps=90)
                 
                 if predictions:
-                    current_price = float(prices.last().close)
+                    current_price = float(prices_list[-1].close)
                     
                     # Short term (7 days)
                     short_term_target = Decimal(str(predictions[6]))

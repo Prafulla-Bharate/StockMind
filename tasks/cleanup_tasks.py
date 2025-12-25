@@ -1,6 +1,7 @@
 from celery import shared_task
 from celery.utils.log import get_task_logger
-from datetime import datetime, timedelta
+from datetime import timedelta
+from django.utils import timezone
 from apps.market.models import StockPrice, MarketScanResult, Sentiment
 from apps.authentication.models import RefreshToken
 
@@ -11,14 +12,14 @@ def cleanup_old_data():
     """Clean up old data from database"""
     try:
         # Delete stock prices older than 5 years
-        five_years_ago = datetime.now() - timedelta(days=5*365)
+        five_years_ago = timezone.now() - timedelta(days=5*365)
         old_prices = StockPrice.objects.filter(timestamp__lt=five_years_ago)
         prices_count = old_prices.count()
         old_prices.delete()
         logger.info(f"Deleted {prices_count} old price records")
         
         # Delete scan results older than 90 days
-        ninety_days_ago = datetime.now() - timedelta(days=90)
+        ninety_days_ago = timezone.now() - timedelta(days=90)
         old_scans = MarketScanResult.objects.filter(timestamp__lt=ninety_days_ago)
         scans_count = old_scans.count()
         old_scans.delete()
@@ -31,7 +32,7 @@ def cleanup_old_data():
         logger.info(f"Deleted {sentiments_count} old sentiment records")
         
         # Delete revoked tokens older than 30 days
-        thirty_days_ago = datetime.now() - timedelta(days=30)
+        thirty_days_ago = timezone.now() - timedelta(days=30)
         old_tokens = RefreshToken.objects.filter(
             is_revoked=True,
             created_at__lt=thirty_days_ago
