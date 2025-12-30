@@ -1,5 +1,6 @@
 from django.urls import path, re_path
 from .views import (
+    PortfolioSummaryView,
     PortfolioHoldingsView,
     PortfolioHoldingDetailView,
     WatchlistView,
@@ -17,6 +18,7 @@ urlpatterns = [
                     <body>
                         <h1>Portfolio API</h1>
                         <ul>
+                            <li><a href='summary/'>Summary (Currency Breakdown)</a></li>
                             <li><a href='holdings/'>Holdings</a></li>
                             <li><a href='watchlist/'>Watchlist</a></li>
                         </ul>
@@ -24,6 +26,10 @@ urlpatterns = [
                 </html>
                 """
         )),
+    # Portfolio summary
+    path('summary/', PortfolioSummaryView.as_view(), name='summary'),
+    re_path(r'^summary/?$', PortfolioSummaryView.as_view(), name='summary-noslash'),
+    
     # Holdings
     path('holdings/', PortfolioHoldingsView.as_view(), name='holdings-list'),
     re_path(r'^holdings/?$', PortfolioHoldingsView.as_view(), name='holdings-list-noslash'),

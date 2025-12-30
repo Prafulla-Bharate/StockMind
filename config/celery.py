@@ -49,6 +49,11 @@ app.conf.beat_schedule = {
         'schedule': crontab(day_of_week=5, hour=16, minute=0),  # Friday 4 PM
         'args': ('weekly',),
     },
+    'run-market-scanner-monthly': {
+        'task': 'tasks.scanner_tasks.run_market_scanner',
+        'schedule': crontab(day_of_month=1, hour=16, minute=0),  # 1st of month 4 PM
+        'args': ('monthly',),
+    },
     'update-predictions-hourly': {
         'task': 'tasks.prediction_tasks.update_predictions',
         'schedule': crontab(minute=0),  # Every hour

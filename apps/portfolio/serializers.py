@@ -5,6 +5,7 @@ from apps.market.serializers import StockSerializer
 class PortfolioHoldingSerializer(serializers.ModelSerializer):
     symbol = serializers.CharField(source='stock.symbol', read_only=True)
     stock_name = serializers.CharField(source='stock.name', read_only=True)
+    currency = serializers.CharField(source='stock.currency', read_only=True)
     total_cost = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     current_value = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     profit_loss = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
@@ -13,7 +14,7 @@ class PortfolioHoldingSerializer(serializers.ModelSerializer):
     class Meta:
         model = PortfolioHolding
         fields = [
-            'id', 'symbol', 'stock_name', 'shares', 'average_price',
+            'id', 'symbol', 'stock_name', 'currency', 'shares', 'average_price',
             'purchase_date', 'notes', 'total_cost', 'current_value',
             'profit_loss', 'profit_loss_percent', 'created_at', 'updated_at'
         ]
@@ -21,10 +22,35 @@ class PortfolioHoldingSerializer(serializers.ModelSerializer):
 
 class PortfolioHoldingCreateSerializer(serializers.ModelSerializer):
     symbol = serializers.CharField(write_only=True)
+    averagePrice = serializers.DecimalField(
+        max_digits=12, decimal_places=4, write_only=True, required=False, source='average_price'
+    )
+    purchaseDate = serializers.DateTimeField(write_only=True, required=False, source='purchase_date')
     
     class Meta:
         model = PortfolioHolding
-        fields = ['symbol', 'shares', 'average_price', 'purchase_date', 'notes']
+        fields = ['symbol', 'shares', 'average_price', 'purchase_date', 'notes', 'averagePrice', 'purchaseDate']
+        extra_kwargs = {
+            'average_price': {'required': False},
+            'purchase_date': {'required': False},
+            'notes': {'required': False, 'allow_blank': True, 'allow_null': True},
+        }
+    
+    def validate(self, data):
+        """Ensure at least one format is provided for price and date"""
+        # Check if we have either snake_case or camelCase for average_price
+        if 'average_price' not in data:
+            raise serializers.ValidationError({
+                'average_price': 'This field is required (use average_price or averagePrice)'
+            })
+        
+        # Check if we have either snake_case or camelCase for purchase_date
+        if 'purchase_date' not in data:
+            raise serializers.ValidationError({
+                'purchase_date': 'This field is required (use purchase_date or purchaseDate)'
+            })
+        
+        return data
     
     def validate_symbol(self, value):
         """Validate stock symbol exists"""
@@ -39,6 +65,10 @@ class PortfolioHoldingCreateSerializer(serializers.ModelSerializer):
         stock = Stock.objects.get(symbol=symbol)
         user = self.context['request'].user
         
+        # Convert None to empty string for notes
+        if validated_data.get('notes') is None:
+            validated_data['notes'] = ''
+        
         # Update or create holding
         holding, created = PortfolioHolding.objects.update_or_create(
             user=user,
@@ -50,12 +80,13 @@ class PortfolioHoldingCreateSerializer(serializers.ModelSerializer):
 class WatchlistSerializer(serializers.ModelSerializer):
     symbol = serializers.CharField(source='stock.symbol', read_only=True)
     stock_name = serializers.CharField(source='stock.name', read_only=True)
+    currency = serializers.CharField(source='stock.currency', read_only=True)
     current_price = serializers.SerializerMethodField()
     
     class Meta:
         model = Watchlist
         fields = [
-            'id', 'symbol', 'stock_name', 'added_at', 'notes',
+            'id', 'symbol', 'stock_name', 'currency', 'added_at', 'notes',
             'alert_price_above', 'alert_price_below', 'current_price'
         ]
         read_only_fields = ['id', 'added_at']

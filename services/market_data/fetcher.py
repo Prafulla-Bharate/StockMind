@@ -161,6 +161,20 @@ class MarketDataFetcher:
             if not info:
                 return None
             
+            # Detect currency from the symbol or exchange
+            currency = info.get('currency', 'USD')
+            if not currency or currency == 'USD':
+                # Determine currency from exchange or symbol suffix
+                exchange = info.get('exchange', '')
+                if '.NS' in symbol or '.BO' in symbol or 'NSE' in exchange or 'BSE' in exchange:
+                    currency = 'INR'
+                elif '.L' in symbol or 'LSE' in exchange:
+                    currency = 'GBP'
+                elif '.T' in symbol or 'JPX' in exchange:
+                    currency = 'JPY'
+                else:
+                    currency = 'USD'
+            
             overview = {
                 'symbol': symbol,
                 'name': info.get('longName', info.get('shortName', symbol)),
@@ -169,6 +183,7 @@ class MarketDataFetcher:
                 'marketCap': info.get('marketCap'),
                 'description': info.get('longBusinessSummary', ''),
                 'exchange': info.get('exchange', 'NASDAQ'),
+                'currency': currency,
                 'website': info.get('website', ''),
                 'employees': info.get('fullTimeEmployees'),
                 'city': info.get('city', ''),

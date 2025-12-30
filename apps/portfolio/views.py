@@ -3,6 +3,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
+from django.db.models import Sum, F, DecimalField
+from django.db.models.functions import Coalesce
 from .models import PortfolioHolding, Watchlist
 from .serializers import (
     PortfolioHoldingSerializer,
@@ -11,6 +13,60 @@ from .serializers import (
     WatchlistCreateSerializer
 )
 from utils.responses import success_response, error_response
+
+class PortfolioSummaryView(APIView):
+    """Portfolio summary with currency breakdown"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """GET /api/portfolio/summary - Returns portfolio value broken down by currency"""
+        holdings = PortfolioHolding.objects.filter(user=request.user).select_related('stock')
+        
+        # Group holdings by currency
+        currency_breakdown = {}
+        total_holdings = 0
+        
+        for holding in holdings:
+            currency = holding.stock.currency or 'USD'
+            
+            # Get latest price
+            latest_price = holding.stock.prices.first()
+            current_value = float(holding.shares * latest_price.close) if latest_price else float(holding.total_cost)
+            total_cost = float(holding.total_cost)
+            profit_loss = current_value - total_cost
+            
+            if currency not in currency_breakdown:
+                currency_breakdown[currency] = {
+                    'currency': currency,
+                    'totalValue': 0,
+                    'totalCost': 0,
+                    'profitLoss': 0,
+                    'profitLossPercent': 0,
+                    'holdings': 0
+                }
+            
+            currency_breakdown[currency]['totalValue'] += current_value
+            currency_breakdown[currency]['totalCost'] += total_cost
+            currency_breakdown[currency]['profitLoss'] += profit_loss
+            currency_breakdown[currency]['holdings'] += 1
+            total_holdings += 1
+        
+        # Calculate percentages for each currency
+        for currency_data in currency_breakdown.values():
+            if currency_data['totalCost'] > 0:
+                currency_data['profitLossPercent'] = round(
+                    (currency_data['profitLoss'] / currency_data['totalCost']) * 100, 2
+                )
+            # Round values
+            currency_data['totalValue'] = round(currency_data['totalValue'], 2)
+            currency_data['totalCost'] = round(currency_data['totalCost'], 2)
+            currency_data['profitLoss'] = round(currency_data['profitLoss'], 2)
+        
+        return Response(success_response(data={
+            'totalHoldings': total_holdings,
+            'currencyBreakdown': list(currency_breakdown.values()),
+            'note': 'Values are separated by currency. Convert to a common currency for total portfolio value.'
+        }))
 
 class PortfolioHoldingsView(APIView):
     """Portfolio holdings list and create"""
@@ -24,6 +80,11 @@ class PortfolioHoldingsView(APIView):
     
     def post(self, request):
         """POST /api/portfolio/holdings"""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Portfolio POST data: {request.data}")
+        logger.info(f"Content-Type: {request.content_type}")
+        
         serializer = PortfolioHoldingCreateSerializer(
             data=request.data,
             context={'request': request}
@@ -40,6 +101,7 @@ class PortfolioHoldingsView(APIView):
                 status=status.HTTP_201_CREATED
             )
         
+        logger.error(f"Portfolio validation errors: {serializer.errors}")
         return Response(
             error_response(
                 message='Failed to add holding',

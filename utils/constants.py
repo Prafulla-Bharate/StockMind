@@ -17,10 +17,10 @@ RSI_NEUTRAL_LOW = 40
 RSI_NEUTRAL_HIGH = 60
 
 # Market scanner thresholds
-GAINER_THRESHOLD = 3.0  # 3% gain
-LOSER_THRESHOLD = -3.0  # 3% loss
-UNUSUAL_VOLUME_RATIO = 2.0  # 2x average volume
-BREAKOUT_THRESHOLD = 5.0  # 5% move
+GAINER_THRESHOLD = 0.01  # 0.01% gain (very sensitive for demo)
+LOSER_THRESHOLD = -0.01  # 0.01% loss (very sensitive for demo)
+UNUSUAL_VOLUME_RATIO = 1.2  # 1.2x average volume
+BREAKOUT_THRESHOLD = 0.05  # 0.05% move (very sensitive for demo)
 
 # Subscription limits
 BASIC_DAILY_REQUESTS = 1000

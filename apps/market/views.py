@@ -70,13 +70,25 @@ class StockDetailView(APIView):
                         name=overview['name'],
                         sector=overview.get('sector', ''),
                         industry=overview.get('industry', ''),
-                        market_cap=overview.get('marketCap')
+                        market_cap=overview.get('marketCap'),
+                        currency=overview.get('currency', 'USD'),
+                        exchange=overview.get('exchange', '')
                     )
                 else:
                     # Create with minimal data if overview fails
+                    # Detect currency from symbol suffix
+                    currency = 'USD'
+                    if '.NS' in symbol or '.BO' in symbol:
+                        currency = 'INR'
+                    elif '.L' in symbol:
+                        currency = 'GBP'
+                    elif '.T' in symbol:
+                        currency = 'JPY'
+                    
                     stock = Stock.objects.create(
                         symbol=symbol,
-                        name=symbol
+                        name=symbol,
+                        currency=currency
                     )
             
             # Save the validated price data if available
@@ -151,6 +163,7 @@ class StockDetailView(APIView):
             data = {
                 'symbol': stock.symbol,
                 'name': stock.name,
+                'currency': stock.currency,
                 'price': float(latest_price.close) if latest_price else 0,
                 'change': float(latest_price.change) if latest_price else 0,
                 'changePercent': float(latest_price.change_percent) if latest_price else 0,
@@ -214,12 +227,18 @@ class MarketScannerView(APIView):
                 }
                 # Cache for 1 minute
                 cache.set(cache_key, data, 60)
-                return Response(success_response(data=data, status='pending'))
+                return Response(success_response(
+                    data=data, 
+                    message='No scan results available yet'
+                ))
             
+            # Get all results from the same scan batch (within 1 minute of latest)
+            from datetime import timedelta
             timestamp = latest.timestamp
+            time_window = timestamp - timedelta(minutes=1)
             results = MarketScanResult.objects.filter(
                 timeframe=timeframe,
-                timestamp=timestamp
+                timestamp__gte=time_window
             ).select_related('stock')
             
             # Separate by categories
@@ -247,7 +266,7 @@ class MarketScannerView(APIView):
                     'totalScanned': total_scanned,
                     'bullish': bullish_count,
                     'bearish': bearish_count,
-                    'avgChange': float(avg_change)
+                    'avgChange': round(float(avg_change), 2)  # Round to 2 decimal places
                 }
             }
             
@@ -729,8 +748,22 @@ class AIPredictionView(APIView):
             else:
                 prediction_text = "Unable to generate prediction with current data."
             
+            # Get currency symbol
+            currency_symbol = '$'  # default
+            if stock.currency == 'INR':
+                currency_symbol = '₹'
+            elif stock.currency == 'GBP':
+                currency_symbol = '£'
+            elif stock.currency == 'JPY':
+                currency_symbol = '¥'
+            
+            # Update prediction text with correct currency
+            if predictions:
+                prediction_text = f"Based on AI analysis, the stock is predicted to reach {currency_symbol}{predictions[-1]:.2f} in 30 days."
+            
             data = {
-                'prediction': prediction_text
+                'prediction': prediction_text,
+                'currency': stock.currency
             }
             
             return Response(success_response(data=data))
@@ -847,6 +880,7 @@ class StatisticalPredictionView(APIView):
 
                 default_data = {
                     'symbol': symbol.upper(),
+                    'currency': stock.currency,
                     'timestamp': timezone.now().isoformat(),
                     'currentPrice': current_price,
                     'technicalIndicators': {
@@ -907,6 +941,7 @@ class StatisticalPredictionView(APIView):
             
             data = {
                 'symbol': stock.symbol,
+                'currency': stock.currency,
                 'timestamp': prediction.timestamp.isoformat(),
                 'currentPrice': float(prediction.current_price),
                 'technicalIndicators': {

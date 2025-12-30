@@ -25,14 +25,37 @@ class TechnicalIndicatorSerializer(serializers.ModelSerializer):
 class MarketScanResultSerializer(serializers.ModelSerializer):
     symbol = serializers.CharField(source='stock.symbol')
     name = serializers.CharField(source='stock.name')
+    currency = serializers.CharField(source='stock.currency')
+    changePercent = serializers.SerializerMethodField()
+    isUnusualVolume = serializers.BooleanField(source='is_unusual_volume')
+    isBreakout = serializers.BooleanField(source='is_breakout')
+    avgVolume = serializers.IntegerField(source='avg_volume')
+    volumeRatio = serializers.FloatField(source='volume_ratio')
     
     class Meta:
         model = MarketScanResult
         fields = [
-            'symbol', 'name', 'price', 'change', 'change_percent',
-            'volume', 'avg_volume', 'volume_ratio', 'trend',
-            'is_unusual_volume', 'is_breakout', 'resistance', 'support'
+            'symbol', 'name', 'currency', 'price', 'change', 'changePercent',
+            'volume', 'avgVolume', 'volumeRatio', 'trend',
+            'isUnusualVolume', 'isBreakout', 'resistance', 'support'
         ]
+    
+    def get_changePercent(self, obj):
+        return float(obj.change_percent)
+    
+    def to_representation(self, instance):
+        """Convert all Decimal fields to float for frontend compatibility"""
+        ret = super().to_representation(instance)
+        # Convert decimal/string numbers to float
+        if ret.get('price'):
+            ret['price'] = float(ret['price'])
+        if ret.get('change'):
+            ret['change'] = float(ret['change'])
+        if ret.get('resistance'):
+            ret['resistance'] = float(ret['resistance']) if ret['resistance'] else None
+        if ret.get('support'):
+            ret['support'] = float(ret['support']) if ret['support'] else None
+        return ret
 
 class NewsArticleSerializer(serializers.ModelSerializer):
     class Meta:
