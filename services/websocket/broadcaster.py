@@ -118,3 +118,30 @@ def broadcast_prediction_update(symbol, prediction_data):
         logger.debug(f"Broadcast prediction update for {symbol}")
     except Exception as e:
         logger.error(f"Error broadcasting prediction update: {e}")
+
+def broadcast_news_update(symbol, article_data):
+    """
+    Broadcast a newly fetched news article
+
+    Args:
+        symbol: Stock symbol
+        article_data: Dict with keys title, url, source, published_at
+    """
+    channel_layer = get_channel_layer()
+    try:
+        async_to_sync(channel_layer.group_send)(
+            f"stock_{symbol}",
+            {
+                'type': 'news_update',
+                'data': {
+                    'symbol': symbol,
+                    'title': article_data.get('title'),
+                    'url': article_data.get('url'),
+                    'source': article_data.get('source'),
+                    'publishedAt': article_data.get('published_at').isoformat() if article_data.get('published_at') else None
+                }
+            }
+        )
+        logger.debug(f"Broadcast news update for {symbol}")
+    except Exception as e:
+        logger.error(f"Error broadcasting news update: {e}")

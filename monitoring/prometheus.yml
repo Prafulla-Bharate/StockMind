@@ -10,13 +10,24 @@ scrape_configs:
       - targets: ['localhost:9090']
 
   - job_name: 'django'
+    # Disabled scraping the Django `web` HTTP endpoint because the
+    # application does not expose a Prometheus `/metrics` endpoint
+    # by default and this caused a lot of 404s in the web logs.
+    # If you want Django metrics, add a Prometheus Django exporter
+    # (e.g. `django-prometheus` or expose `/metrics` via
+    # `prometheus_client`) and re-enable this target pointing at
+    # 'web:8000'.
     static_configs:
-      - targets: ['web:8000']
+      - targets: []
+  # Redis and Postgres should be scraped via exporters (redis_exporter/postgres_exporter).
+  # Scraping raw Redis/Postgres ports with HTTP causes 'invalid length of startup packet'
+  # and 'Possible SECURITY ATTACK' logs. Add exporters and point targets to their HTTP
+  # metrics endpoints (e.g. 'redis_exporter:9121', 'postgres_exporter:9187') instead.
 
   - job_name: 'redis'
     static_configs:
-      - targets: ['redis:6379']
+      - targets: ['redis_exporter:9121']
 
   - job_name: 'postgres'
     static_configs:
-      - targets: ['postgres:5432']
+      - targets: ['postgres_exporter:9187']

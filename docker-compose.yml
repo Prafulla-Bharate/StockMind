@@ -162,6 +162,33 @@ services:
     networks:
       - stockmind_network
 
+  # Redis exporter for Prometheus
+  redis_exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: stockmind_redis_exporter
+    environment:
+      - REDIS_ADDR=redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
+    networks:
+      - stockmind_network
+
+  # Postgres exporter for Prometheus
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: stockmind_postgres_exporter
+    environment:
+      # Use docker-compose variable substitution from .env for credentials
+      - DATA_SOURCE_NAME=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:${DB_PORT:-5432}/${DB_NAME:-postgres}?sslmode=disable
+    ports:
+      - "9187:9187"
+    depends_on:
+      - postgres
+    networks:
+      - stockmind_network
+
 volumes:
   postgres_data:
   redis_data:

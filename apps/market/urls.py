@@ -5,7 +5,8 @@ from .views import (
     NewsView,
     SentimentView,
     AIPredictionView,
-    StatisticalPredictionView
+    StatisticalPredictionView,
+    MarketSearchView
 )
 
 app_name = 'market'
@@ -47,4 +48,7 @@ urlpatterns = [
     re_path(r'^ai-prediction/?$', AIPredictionView.as_view(), name='ai-prediction-noslash'),
     path('statistical-prediction/', StatisticalPredictionView.as_view(), name='statistical-prediction'),
     re_path(r'^statistical-prediction/?$', StatisticalPredictionView.as_view(), name='statistical-prediction-noslash'),
+    # Symbol/Name search
+    path('search/', MarketSearchView.as_view(), name='market-search'),
+    re_path(r'^search/?$', MarketSearchView.as_view(), name='market-search-noslash'),
 ]

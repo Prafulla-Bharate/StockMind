@@ -1,9 +1,10 @@
 
 import requests
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from django.conf import settings
 from apps.market.models import NewsArticle, Stock
+import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,11 @@ class NewsAPIService:
             'reuters.com', 'bloomberg.com', 'wsj.com', 'finance.yahoo.com',
             'marketwatch.com', 'seekingalpha.com', 'cnbc.com', 'investors.com',
             'financialpost.com', 'barrons.com', 'fool.com', 'investopedia.com',
-            'nasdaq.com', 'thestreet.com'
+            'nasdaq.com', 'thestreet.com',
+            # India-focused finance/business sources (TCS, NSE stocks)
+            'economictimes.indiatimes.com', 'moneycontrol.com', 'livemint.com',
+            'business-standard.com', 'ndtv.com', 'thehindu.com', 'hindustantimes.com',
+            'indianexpress.com'
         ]
         self.domains = getattr(settings, 'NEWSAPI_DOMAINS', default_domains)
         self.exclude_domains = getattr(settings, 'NEWSAPI_EXCLUDE_DOMAINS', [
@@ -26,7 +31,10 @@ class NewsAPIService:
         ])
     
     def fetch_news(self, symbol, company_name=None, days_back=7):
-        """Fetch news articles for a stock with stricter relevance filtering."""
+        """Fetch news articles for a stock with stricter relevance filtering.
+
+        Falls back to yfinance's news feed when NEWSAPI_KEY is unavailable.
+        """
         try:
             # Build a more specific query to reduce unrelated articles
             keywords = [symbol]
@@ -55,6 +63,66 @@ class NewsAPIService:
                 'excludeDomains': ','.join(self.exclude_domains)
             }
             
+            if not self.api_key:
+                logger.warning("NEWSAPI_KEY missing in settings; using yfinance news fallback.")
+                # yfinance fallback
+                try:
+                    stock = Stock.objects.get(symbol=symbol)
+                    ticker = yf.Ticker(symbol)
+                    yf_news = getattr(ticker, 'news', []) or []
+                    if not yf_news:
+                        return []
+
+                    from django.utils import timezone as dj_tz
+                    cutoff = dj_tz.now() - timedelta(days=days_back)
+
+                    articles = []
+                    for item in yf_news:
+                        try:
+                            # providerPublishTime is epoch seconds
+                            pub_ts = item.get('providerPublishTime')
+                            if not pub_ts:
+                                continue
+                            published_at = datetime.fromtimestamp(int(pub_ts), tz=timezone.utc)
+                            if published_at < cutoff:
+                                continue
+
+                            url = item.get('link') or item.get('url')
+                            if not url:
+                                continue
+                            if NewsArticle.objects.filter(url=url).exists():
+                                continue
+
+                            title = item.get('title') or ''
+                            desc = item.get('summary') or item.get('content') or ''
+                            source_name = ''
+                            # yfinance provides a list of publishers sometimes
+                            if isinstance(item.get('publisher'), str):
+                                source_name = item.get('publisher')
+                            elif isinstance(item.get('publisher'), (list, tuple)) and item.get('publisher'):
+                                source_name = item['publisher'][0]
+
+                            news_article = NewsArticle.objects.create(
+                                stock=stock,
+                                title=title[:500],
+                                description=desc,
+                                content=desc,
+                                url=url,
+                                url_to_image=item.get('thumbnailUrl') or None,
+                                source=source_name or 'Yahoo Finance',
+                                author='',
+                                published_at=published_at
+                            )
+                            articles.append(news_article)
+                        except Exception as e:
+                            logger.error(f"Error saving yfinance article: {e}")
+                            continue
+
+                    return articles
+                except Exception as e:
+                    logger.error(f"yfinance news fallback failed for {symbol}: {e}")
+                    return []
+
             response = requests.get(self.base_url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
@@ -88,16 +156,13 @@ class NewsAPIService:
                         ]
 
                         if not any(term in text for term in relevant_terms):
-                            # If the site isn't in the preferred finance domains, skip
-                            domain = (article.get('source') or {}).get('name', '')
                             url = article.get('url', '')
                             domain_in_url = url.split('/')[2] if '://' in url else ''
-                            if not any(d in domain_in_url for d in self.domains):
+                            has_finance_context = any(t in text for t in finance_context_terms)
+                            in_allowed_domain = any(d in domain_in_url for d in self.domains)
+                            # Relax: accept if either in allowed finance domains OR finance context present
+                            if not (in_allowed_domain or has_finance_context):
                                 continue
-                            # Even for preferred domains, require finance context
-                            if not any(t in text for t in finance_context_terms):
-                                continue
-                            continue
 
                         # Check if article already exists
                         if NewsArticle.objects.filter(url=article['url']).exists():

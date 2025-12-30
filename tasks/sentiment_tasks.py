@@ -3,7 +3,7 @@ from celery.utils.log import get_task_logger
 from apps.market.models import Stock, NewsArticle, Sentiment
 from services.external.news_api import NewsAPIService
 from services.external.gemini_api import GeminiSentimentAnalyzer
-from services.websocket.broadcaster import broadcast_sentiment_update
+from services.websocket.broadcaster import broadcast_sentiment_update, broadcast_news_update
 
 logger = get_task_logger(__name__)
 
@@ -23,9 +23,16 @@ def fetch_and_analyze_news(self, symbols=None):
                 # Fetch news
                 articles = news_service.fetch_news(symbol)
                 
-                # Analyze sentiment for each article
+                # Analyze sentiment for each article and broadcast
                 for article in articles:
                     try:
+                        # Broadcast news update for near real-time UI
+                        broadcast_news_update(symbol, {
+                            'title': article.title,
+                            'url': article.url,
+                            'source': article.source,
+                            'published_at': article.published_at,
+                        })
                         sentiment_result = sentiment_analyzer.analyze_article(
                             article.title,
                             article.description

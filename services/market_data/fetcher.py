@@ -1,5 +1,6 @@
 import yfinance as yf
 import logging
+import requests
 from datetime import datetime, timedelta
 from decimal import Decimal
 from django.utils import timezone
@@ -29,43 +30,77 @@ class MarketDataFetcher:
         try:
             ticker = yf.Ticker(symbol)
             info = ticker.info
-            
-            if not info or 'currentPrice' not in info:
-                # Fallback to fast_info
-                fast_info = ticker.fast_info
-                quote_data = {
-                    'symbol': symbol,
-                    'price': Decimal(str(fast_info.get('last_price', 0))),
-                    'open': Decimal(str(fast_info.get('open', 0))),
-                    'high': Decimal(str(fast_info.get('day_high', 0))),
-                    'low': Decimal(str(fast_info.get('day_low', 0))),
-                    'previousClose': Decimal(str(fast_info.get('previous_close', 0))),
-                    'volume': int(fast_info.get('last_volume', 0)),
-                    'timestamp': timezone.now()
-                }
+
+            # If yfinance didn't find a valid ticker, try a quick Yahoo search
+            # to resolve exchange-qualified symbols (e.g., TCS -> TCS.NS)
+            if (not info or 'currentPrice' not in info) and ('.' not in symbol):
+                try:
+                    resp = requests.get(
+                        'https://query2.finance.yahoo.com/v1/finance/search',
+                        params={'q': symbol, 'quotesCount': 5, 'newsCount': 0},
+                        timeout=5
+                    )
+                    data = resp.json()
+                    quotes = data.get('quotes', [])
+                    if quotes:
+                        # prefer the first equity-like result that includes an exchange
+                        resolved = None
+                        for q in quotes:
+                            sym = q.get('symbol')
+                            exch = q.get('exchDisp') or q.get('exchange')
+                            quote_type = q.get('quoteType')
+                            if quote_type and quote_type.lower() in ('equity', 'etf') and sym:
+                                resolved = sym
+                                break
+                        if resolved and resolved != symbol:
+                            logger.info(f"Resolved '{symbol}' -> '{resolved}' via Yahoo search")
+                            ticker = yf.Ticker(resolved)
+                            info = ticker.info
+                            symbol = resolved
+                except Exception:
+                    # Non-fatal: keep original symbol and proceed
+                    pass
+
+            if not info or ('currentPrice' not in info and not getattr(ticker, 'fast_info', None)):
+                # Fallback: try using fast_info if available
+                try:
+                    fast_info = ticker.fast_info
+                    quote_data = {
+                        'symbol': symbol,
+                        'price': Decimal(str(fast_info.get('last_price', 0))),
+                        'open': Decimal(str(fast_info.get('open', 0))),
+                        'high': Decimal(str(fast_info.get('day_high', 0))),
+                        'low': Decimal(str(fast_info.get('day_low', 0))),
+                        'previousClose': Decimal(str(fast_info.get('previous_close', 0))),
+                        'volume': int(fast_info.get('last_volume', 0) or 0),
+                        'timestamp': timezone.now()
+                    }
+                except Exception:
+                    return None
             else:
                 current_price = Decimal(str(info.get('currentPrice', 0)))
-                previous_close = Decimal(str(info.get('previousClose', 0)))
+                previous_close_val = info.get('previousClose', 0)
+                previous_close = Decimal(str(previous_close_val)) if previous_close_val is not None else Decimal('0')
                 change = current_price - previous_close
                 change_percent = (change / previous_close * 100) if previous_close > 0 else 0
-                
+
                 quote_data = {
                     'symbol': symbol,
                     'price': current_price,
                     'change': change,
                     'changePercent': change_percent,
-                    'volume': int(info.get('volume', 0)),
+                    'volume': int(info.get('volume', 0) or 0),
                     'open': Decimal(str(info.get('open', 0))),
                     'high': Decimal(str(info.get('dayHigh', 0))),
                     'low': Decimal(str(info.get('dayLow', 0))),
                     'previousClose': previous_close,
                     'timestamp': timezone.now()
                 }
-            
+
             # Cache for 1 minute
             cache.set(cache_key, quote_data, 60)
             return quote_data
-            
+
         except Exception as e:
             logger.error(f"Error fetching real-time quote for {symbol}: {e}")
             return None

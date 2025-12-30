@@ -19,6 +19,7 @@ app.conf.imports = app.conf.imports + (
     'tasks.prediction_tasks',
     'tasks.sentiment_tasks',
     'tasks.cleanup_tasks',
+    'tasks.validation_tasks',
 )
 
 # On Windows, the default multiprocessing pool can hit semaphore/handle
@@ -52,9 +53,9 @@ app.conf.beat_schedule = {
         'task': 'tasks.prediction_tasks.update_predictions',
         'schedule': crontab(minute=0),  # Every hour
     },
-    'fetch-news-every-30min': {
+    'fetch-news-every-10min': {
         'task': 'tasks.sentiment_tasks.fetch_and_analyze_news',
-        'schedule': crontab(minute='*/30'),  # Every 30 minutes
+        'schedule': crontab(minute='*/10'),  # Every 10 minutes for fresher news
     },
     'cleanup-old-data-daily': {
         'task': 'tasks.cleanup_tasks.cleanup_old_data',
@@ -64,6 +65,10 @@ app.conf.beat_schedule = {
         'task': 'tasks.market_tasks.fetch_historical_data_for_stocks',
         'schedule': crontab(day_of_week=0, hour=2, minute=0),  # Sunday 2 AM
         'kwargs': {'period': '1y', 'force_refresh': False},
+    },
+    'validate-and-cleanup-stocks-daily': {
+        'task': 'tasks.validation_tasks.validate_and_cleanup_stocks',
+        'schedule': crontab(hour=1, minute=0),  # 1 AM daily - remove invalid/stale stocks
     },
 }
 
