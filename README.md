@@ -22,16 +22,17 @@
 <div align="center">
 
 ### Real-time Dashboard
-![Dashboard](./images/dashboard.png)
+![Dashboard](./images/dashboard.png.png)
 
 ### AI Predictions & Charts
-![Predictions](./images/predictions.png)
+![Charts](./images/charts.png.png)
+![Predictions](./images/predictions.png.png)
 
 ### Portfolio Management
-![Portfolio](./images/portfolio.png)
+![Portfolio](./images/portfolio.png.png)
 
 ### Market Scanner
-![Scanner](./images/scanner.png)
+![Scanner](./images/scanner.png.png)
 
 </div>
 
