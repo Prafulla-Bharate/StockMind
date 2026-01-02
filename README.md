@@ -21,17 +21,17 @@
 
 <div align="center">
 
-### Dashboard Overview
-![Dashboard](https://via.placeholder.com/800x400/1a1a1a/00ff00?text=Real-time+Dashboard+with+Live+Market+Data)
+### Real-time Dashboard
+![Dashboard](./images/dashboard.png)
 
 ### AI Predictions & Charts
-![Predictions](https://via.placeholder.com/800x400/1a1a1a/0080ff?text=LSTM+AI+Predictions+%26+Technical+Indicators)
+![Predictions](./images/predictions.png)
 
 ### Portfolio Management
-![Portfolio](https://via.placeholder.com/800x400/1a1a1a/ff8000?text=Multi-Currency+Portfolio+Tracking)
+![Portfolio](./images/portfolio.png)
 
 ### Market Scanner
-![Scanner](https://via.placeholder.com/800x400/1a1a1a/ff0080?text=Advanced+Market+Scanner+%26+Filters)
+![Scanner](./images/scanner.png)
 
 </div>
 
